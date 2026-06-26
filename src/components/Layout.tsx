@@ -5,6 +5,7 @@ import GrossNetCalculator from './GrossNetCalculator';
 import WgtVolCalculator from './WgtVolCalculator';
 import { type FuelType, type WgtVolUnit, calculateGrossNet, calculateWgtVol } from '../utils/apiCalculator';
 import { useHistory, type HistoryEntry } from '../utils/useHistory';
+import { useStickyState } from '../utils/useStickyState';
 
 export interface SharedState {
   fuelType: FuelType; setFuelType: (val: FuelType) => void;
@@ -17,21 +18,56 @@ export interface SharedState {
 }
 
 export default function Layout() {
-  const [activeTab, setActiveTab] = useState('api');
-  const [isNightMode, setIsNightMode] = useState(false);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  // Use sticky state for everything we want to survive a refresh
+  const [activeTab, setActiveTab] = useStickyState('api', 'ft-activeTab');
+  const [isNightMode, setIsNightMode] = useStickyState(false, 'ft-nightMode');
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false); // Modals shouldn't stay open on reload
 
-  const [fuelType, setFuelType] = useState<FuelType>('jet a');
-  const [obsApi, setObsApi] = useState('');
-  const [obsTemp, setObsTemp] = useState('');
-  const [corrApi, setCorrApi] = useState('');
-  const [grossVol, setGrossVol] = useState('');
-  const [wgtVolUnit, setWgtVolUnit] = useState<WgtVolUnit>('gal');
-  const [wgtVolAmt, setWgtVolAmt] = useState('');
+  // Shared State
+  const [fuelType, setFuelType] = useStickyState<FuelType>('jet a', 'ft-fuelType');
+  const [obsApi, setObsApi] = useStickyState('', 'ft-obsApi');
+  const [obsTemp, setObsTemp] = useStickyState('', 'ft-obsTemp');
+  const [corrApi, setCorrApi] = useStickyState('', 'ft-corrApi');
+  const [grossVol, setGrossVol] = useStickyState('', 'ft-grossVol');
+  const [wgtVolUnit, setWgtVolUnit] = useStickyState<WgtVolUnit>('gal', 'ft-wgtVolUnit');
+  const [wgtVolAmt, setWgtVolAmt] = useStickyState('', 'ft-wgtVolAmt');
 
-const { history, recordState, finalizeSave } = useHistory();
+  const { history, recordState, finalizeSave } = useHistory();
   
-  // THE FIREGATE: Starts true so the app doesn't save the empty state on initial load
+// ==========================================
+  // DEEP LINKING: Intercept URL Parameters
+  // ==========================================
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const importedApi = params.get('api');
+    const importedTemp = params.get('temp');
+    const importedFuel = params.get('fuel');
+
+    let hasImports = false;
+
+    if (importedFuel && ['gasoline', 'jet a', 'diesel'].includes(importedFuel.toLowerCase())) {
+      setFuelType(importedFuel.toLowerCase() as FuelType);
+      hasImports = true;
+    }
+    if (importedApi) {
+      setObsApi(importedApi);
+      hasImports = true;
+    }
+    if (importedTemp) {
+      setObsTemp(importedTemp);
+      hasImports = true;
+    }
+
+    if (hasImports) {
+      // Switch to the API tab so the user immediately sees the new baseline calculated
+      setActiveTab('api');
+      
+      // Scrub the URL clean without reloading the page
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []); // Empty dependency array ensures this only runs once when the app opens
+
+  // THE FIREGATE: Starts true so the app doesn't save the restored state on initial load
   const isProgrammaticUpdate = useRef(true); 
   const activeTabRef = useRef(activeTab);
 
